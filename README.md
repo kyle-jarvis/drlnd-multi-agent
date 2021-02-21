@@ -7,6 +7,12 @@ Read about the project / environment [here](./UdacityP3MultiAgent.md).
 
 ## Project Details
 
+Two agents take actions in a tennis-style environment. Each agent controls the movement
+of one 'raquet'. Each agent receives its own perspective of the environment.
+As described in [here](./UdacityP3MultiAgent.md), agents receive a reward of -0.01
+if the ball lands on the ground in their half of the court. Agents receive a reward
+of +0.1 for 'batting' the ball over the net. Therefore, agents receive a high reward
+by establishing volleys collaboratively.
 
 ## Getting Started
 1. Python Environment

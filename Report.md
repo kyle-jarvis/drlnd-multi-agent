@@ -91,7 +91,7 @@ to establish rallies.
 Whilst training, the episode length became so long due to the length of the rallies
 that training was terminated prematurely.
 
-<img src = "./resources/reacher.gif" width="300" height=180/>
+<img src = "./resources/Tennis.gif" width="300" height=180/>
 
 ## Future work
 
