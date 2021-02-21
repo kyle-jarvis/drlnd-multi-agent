@@ -50,7 +50,12 @@ def train(n_episodes, note):
     """Train a pair of agents to play tennis using the MADDPG algorithm.
     """
     env, brain_name, num_agents, action_size, state_size = \
-        get_unity_env('./unity_environments/Tennis/Tennis_Linux/Tennis.x86_64')
+        get_unity_env(
+            os.path.join(
+                os.environ['PROJECT_HOME'], 
+                './unity_environments/Tennis/Tennis_Linux/Tennis.x86_64'
+                )
+            )
 
     buffer = ReplayBuffer(
         action_size, 
@@ -163,8 +168,13 @@ def run(weights_path: str, n_episodes: int):
     agent's interaction with the environment.
     """
     env, brain_name, num_agents, action_size, state_size = \
-        get_unity_env('./unity_environments/Tennis/Tennis_Linux/Tennis.x86_64')
-
+        get_unity_env(
+            os.path.join(
+                os.environ['PROJECT_HOME'], 
+                './unity_environments/Tennis/Tennis_Linux/Tennis.x86_64'
+                )
+            )
+            
     agent_specs = []
     for i in range(num_agents):
         agent_specs.append(AgentSpec(state_size, action_size))
@@ -198,5 +208,5 @@ def run(weights_path: str, n_episodes: int):
 
 
 if __name__ == "__main__":
-    os.environ['PROJECT_HOME'] = os.getcwd()
+    os.environ['PROJECT_HOME'] = os.path.dirname(__file__)
     cli()

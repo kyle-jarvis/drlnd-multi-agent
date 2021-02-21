@@ -88,9 +88,11 @@ in a stable fashion, and for the training curve below, training was terminated p
 because the length of the rallies between agents had caused the episode length to
 dramatically increase!
 
+See the [report](Report.md) for a discussion on the below training trajectory.
+
 <img src = "./resources/results.png" width="300"/>
 
-Below is a GIF of the trained agent controlling a number of limbs simultaneously. Targets are visible as green spheres.
+Below is a GIF of the trained agents playing a game of 'tennis'. Agents receive a positive reward for 'returning' the ball, and a negative reward for 'dropping' the ball.
 
-<img src = "./resources/reacher.gif" width="450" height=270/>
+<img src = "./resources/Tennis.gif" width="450" height=270/>
 
