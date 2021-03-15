@@ -17,18 +17,18 @@ import yaml
 def get_unity_env(path: str):
     env = UnityEnvironment(file_name=path)
 
-    brain_name = env.brain_names[0]
-    brain = env.brains[brain_name]
-    env_info = env.reset(train_mode=False)[brain_name]   
-    num_agents = len(env_info.agents)
+    brain_names = env.brain_names
+    brains = [env.brains[x] for x in brain_names]
+    env_infos = [env.reset(train_mode=False)[x] for x in brain_names]   
+    num_agents = [len(x.agents) for x in env_infos]
 
-    action_size = brain.vector_action_space_size
-    states = env_info.vector_observations
-    state_size = states.shape[1]
+    action_sizes = [x.vector_action_space_size for x in brains]
+    states = [x.vector_observations for x in env_infos]
+    state_sizes = [x.shape[1] for x in states]
 
-    print(f"Num agents: {num_agents}\nAction dim: f{action_size}\nState dim: {state_size}")
+    #[print(f"Num agents: {num_agents}\nAction dim: f{action_size}\nState dim: {state_size}")]
 
-    return env, brain_name, num_agents, action_size, state_size
+    return env, brain_names, num_agents, action_sizes, state_sizes
 
 
 
@@ -49,16 +49,18 @@ def cli():
 def train(n_episodes, note):
     """Train a pair of agents to play tennis using the MADDPG algorithm.
     """
-    env, brain_name, num_agents, action_size, state_size = \
+    env, brain_names, num_agents, action_sizes, state_sizes = \
         get_unity_env(
             os.path.join(
                 os.environ['PROJECT_HOME'], 
-                './unity_environments/Tennis/Tennis_Linux/Tennis.x86_64'
+                './unity_environments/Soccer/Soccer_Linux/Soccer.x86_64'
                 )
             )
 
+    print(env.brain_names)
+
     buffer = ReplayBuffer(
-        action_size, 
+        action_sizes, 
         int(5e6), 
         256, 
         1234, 
@@ -66,9 +68,12 @@ def train(n_episodes, note):
         )
 
     agent_specs = []
-    for i in range(num_agents):
-        agent_specs.append(AgentSpec(state_size, action_size))
-    agent = MADDPGAgent(agent_specs, buffer, hidden_layer_size=128)
+    for i, brain_name in enumerate(brain_names):
+        print(f"Collecting agent specs for {brain_name}")
+        for j in range(num_agents[i]):
+            agent_specs.append(AgentSpec(state_sizes[i], action_sizes[i]))
+    agent = MADDPGAgent(agent_specs, buffer, hidden_layer_size=256)
+    print(agent_specs)
 
     episode_scores = deque(maxlen=100)
     on_policy_scores = deque(maxlen=100)
@@ -107,10 +112,13 @@ def train(n_episodes, note):
                         policy_suppression = (1.0 - scale), 
                         noise_func = noise_fn)
                         )
-                env_info = env.step([x.numpy() for x in actions])[brain_name]
-                next_states = env_info.vector_observations
-                rewards = env_info.rewards
-                dones = env_info.local_done
+
+                print(actions)
+                env = env.step(dict(zip(brain_names, actions)))
+                env_infos = [env[x] for x in brain_names]
+                next_states = [x.vector_observations for x in env_infos]
+                rewards = [x.rewards for x in env_infos]
+                dones = [x.local_done for x in env_infos]
 
                 if not online(i):
                     agent.replay_buffer.add(
