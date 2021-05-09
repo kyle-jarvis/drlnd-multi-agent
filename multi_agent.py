@@ -19,6 +19,7 @@ from drlnd.common.utils import (
 from collections import deque, namedtuple
 import click
 import torch
+import torch.nn.functional as F
 import numpy as np
 import os
 import yaml
@@ -55,19 +56,27 @@ def cli():
     Can be none, in which case the pre-trained weights in resources are used.
     """,
 )
-def train(n_episodes, note, weights_path):
+@click.option(
+    "--env-id",
+    type=click.Choice(['Tennis', 'Soccer'], case_sensitive=False),
+    default="Tennis",
+    help="""
+    """,
+)
+def train(n_episodes, note, weights_path, env_id):
     """Train a pair of agents to play tennis using the MADDPG algorithm."""
+
     env, brain_spec = get_unity_env(
         os.path.join(
             os.environ["PROJECT_HOME"],
-            "./unity_environments/Tennis/Tennis_Linux/Tennis.x86_64",
+            f"./unity_environments/{env_id}/{env_id}_Linux/{env_id}.x86_64",
         )
     )
 
     brain_spec_list = list(brain_spec.values())
     print(env.brain_names)
 
-    env_wrapper = UnityEnvWrapper(env, brain_spec_list, ActionType.CONTINUOUS)
+    env_wrapper = UnityEnvWrapper(env, brain_spec_list, ActionType.DISCRETE)
 
     # This defines an important ordering which sets which indices of the policy
     # and critic networks correspond to the observations and actions of each agent.
@@ -78,12 +87,22 @@ def train(n_episodes, note, weights_path):
         int(5e6),
         256,
         1234,
-        action_dtype=ActionType.CONTINUOUS,
+        action_dtype=ActionType.DISCRETE,
         brain_agents=brain_spec_list,
     )
 
+    def policy_activation(x):
+        if len(x.shape) == 1:
+            return F.gumbel_softmax(x.unsqueeze(0)).squeeze()
+        return F.gumbel_softmax(x)
+
+    if env_id is "Tennis":
+        policy_network_kwargs = {"output_activation": lambda x: x}
+    else:
+        policy_network_kwargs = {"output_activation": policy_activation}
+
     agent_inventory = AgentInventory(brain_spec_list)
-    agent = MADDPGAgent2(agent_inventory, buffer, hidden_layer_size=256)
+    agent = MADDPGAgent2(agent_inventory, buffer, hidden_layer_size=256, policy_network_kwargs=policy_network_kwargs)
 
     if weights_path is not None:
         agent.load_weights(weights_path)
@@ -95,9 +114,23 @@ def train(n_episodes, note, weights_path):
     online = lambda x: (x % 10 == 0)
     learning_episodes = 0
 
-    noise_fn_taper = 10000
+    noise_fn_taper = 1000
     scale_next = 1.0
     exception_raised = None
+
+    def make_noise_generator(size, scale, dt, theta):
+        noise_generator = OrnsteinUhlenbeckProcess(
+            [size], scale, dt, theta
+            )
+        noise_callable = lambda: torch.from_numpy(noise_generator.sample()).float()
+
+        return noise_callable
+
+    
+    def no_noise_callable(size):
+            return lambda: torch.zeros(size)
+
+    no_noise = {brain.name: no_noise_callable(brain.action_size) for brain in brain_spec_list}            
 
     for i in range(n_episodes):
         try:
@@ -111,21 +144,21 @@ def train(n_episodes, note, weights_path):
                 # noise_fn = lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(action_size))).float()
                 dt = np.random.choice([1e-2, 5e-2, 1e-1])
                 theta = np.random.choice([0.1, 0.5, 1.0])
-                noise_generator = OrnsteinUhlenbeckProcess(
-                    [brain_spec_list[0].action_size], scale, dt=dt, theta=theta
-                )
-                noise_fn = lambda: torch.from_numpy(noise_generator.sample()).float()
+                #noise_generators = {brain.name: make_noise_generator(brain.action_size, scale, dt, theta) for brain in brain_spec_list}
+                noise_generators = dict(map(lambda brain: (brain.name, lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(brain.action_size))).float()), brain_spec_list))
+                #noise_generators = {brain.name: lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(brain.action_size))).float() for brain in brain_spec_list}
                 learning_episodes += 1
             else:
                 scale = 0.0
-                noise_fn = lambda: 0.0
+                noise_generators = no_noise
 
             steps_this_episode = 0
 
             while True:
                 states = env_wrapper.get_states()
+                print(noise_generators)
                 actions = agent.act(
-                    states, policy_suppression=(1.0 - scale), noise_func=noise_fn
+                    states, policy_suppression=(1.0 - scale), noise_func=noise_generators
                 )
 
                 # print(actions)
@@ -146,20 +179,19 @@ def train(n_episodes, note, weights_path):
                     ) = agent.replay_buffer.add_from_dicts(*env_wrapper.sars())
                     agent.learn(0.99)
 
-                rewards = env_wrapper.get_rewards()
-                dones = env_wrapper.get_dones()
+                rewards = agent.replay_buffer.latest_reward
+                dones = agent.replay_buffer.latest_done
                 scores = [
-                    scores[x] + rewards["TennisBrain"][x]
+                    scores[x] + rewards[x]
                     for x in range(agent_inventory.num_agents)
-                ]
-                dones = [
-                    dones["TennisBrain"][x] for x in range(agent_inventory.num_agents)
                 ]
 
                 steps_this_episode += 1
                 print(f"Steps taken this episode: {steps_this_episode}")
                 print(f"Dones = {dones}")
                 if np.any(dones):
+                    break
+                if steps_this_episode > 500:
                     break
 
             if not online(i):
@@ -188,7 +220,7 @@ def train(n_episodes, note, weights_path):
         with open(os.path.join(results_directory, "note.txt"), "w") as f:
             f.write(note)
     params = {
-        "noise_fn": repr(noise_fn),
+        #"noise_fn": repr(noise_fn),
         "noise_fn_taper": noise_fn_taper,
         "taper": "linear",
     }
@@ -196,7 +228,7 @@ def train(n_episodes, note, weights_path):
         yaml.dump(params, f)
     print(f"INFO: Saved results to {results_directory}")
     if exception_raised is not None:
-        raise event
+        raise exception_raised
 
 
 @cli.command()
